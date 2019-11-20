@@ -15,91 +15,103 @@ clean:
 process: process.rb
 	rm -rf build && ruby process.rb
 
+download: download-spreadsheets
+
 download-spreadsheets: downloads/csv/candidates.csv downloads/csv/committees.csv \
 	downloads/csv/referendums.csv downloads/csv/name_to_number.csv \
-	downloads/csv/office_elections.csv downloads/csv/elections.csv
+	downloads/csv/office_elections.csv downloads/csv/elections.csv \
+	downloads/csv/sd_candidates.csv
 
-download-cached:
-	$(WGET) -O- "https://s3-us-west-2.amazonaws.com/odca-data-cache/$(shell \
-		git log --author 'OpenDisclosure Deploybot' -n1 --pretty=format:%aI | cut -d"T" -f1 \
-	).tar.gz" | tar xz
+#download-cached:
+#	$(WGET) -O- "https://s3-us-west-2.amazonaws.com/odca-data-cache/$(shell \
+#		git log --author 'OpenDisclosure Deploybot' -n1 --pretty=format:%aI | cut -d"T" -f1 \
+#	).tar.gz" | tar xz
 
-upload-cache:
-	mkdir -p downloads/cached-db/
-	pg_dump $(DATABASE_NAME) > downloads/cached-db/$(DATABASE_NAME).sql
-	tar czf - downloads/csv downloads/static downloads/cached-db \
-		| aws s3 cp - s3://odca-data-cache/$(shell date +%Y-%m-%d).tar.gz --acl public-read
-
-download: download-spreadsheets download-SFO-2017 download-SFO-2018 \
-	download-COAK-2015 download-COAK-2016 download-COAK-2017 download-COAK-2018 \
-	download-BRK-2017 download-BRK-2018
-
-download-SFO-%:
-	mkdir -p downloads/raw
-	$(WGET) http://nf4.netfile.com/pub2/excel/SFOBrowsable/efile_SFO_$(subst download-SFO-,,$@).zip -O \
-		downloads/raw/efile_SFO_$(subst download-SFO-,,$@).zip
-	unzip -p downloads/raw/efile_SFO_$(subst download-SFO-,,$@).zip > downloads/raw/efile_SFO_$(subst download-SFO-,,$@).xlsx
-	ruby ssconvert.rb downloads/raw/efile_SFO_$(subst download-SFO-,,$@).xlsx 'downloads/csv/efile_SFO_$(subst download-SFO-,,$@)_%{sheet}.csv'
-
-download-COAK-%:
-	mkdir -p downloads/raw
-	$(WGET) http://nf4.netfile.com/pub2/excel/COAKBrowsable/efile_COAK_$(subst download-COAK-,,$@).zip -O \
-		downloads/raw/efile_COAK_$(subst download-COAK-,,$@).zip
-	unzip -p downloads/raw/efile_COAK_$(subst download-COAK-,,$@).zip > downloads/raw/efile_COAK_$(subst download-COAK-,,$@).xlsx
-	ruby ssconvert.rb downloads/raw/efile_COAK_$(subst download-COAK-,,$@).xlsx 'downloads/csv/efile_COAK_$(subst download-COAK-,,$@)_%{sheet}.csv'
-
-download-BRK-%:
-	ruby ssconvert.rb downloads/static/efile_BRK_$(subst download-BRK-,,$@).xlsx 'downloads/csv/efile_BRK_$(subst download-BRK-,,$@)_%{sheet}.csv'
-
-import: dropdb createdb do-import-spreadsheets import-data
-
-import-cached: dropdb createdb
-	cat downloads/cached-db/$(DATABASE_NAME).sql | psql $(DATABASE_NAME)
-
-import-spreadsheets: prep-import-spreadsheets do-import-spreadsheets
-	./bin/make_view
-
-prep-import-spreadsheets:
-	echo 'DROP VIEW "Measure_Expenditures";' | psql $(DATABASE_NAME)
-	echo 'DROP VIEW "all_contributions" CASCADE;' | psql $(DATABASE_NAME)
-	echo 'DROP VIEW "independent_candidate_expenditures";' | psql $(DATABASE_NAME)
+#upload-cache:
+#	mkdir -p downloads/cached-db/
+#	pg_dump $(DATABASE_NAME) > downloads/cached-db/$(DATABASE_NAME).sql
+#	tar czf - downloads/csv downloads/static downloads/cached-db \
+#		| aws s3 cp - s3://odca-data-cache/$(shell date +%Y-%m-%d).tar.gz --acl public-read
 
 
-do-import-spreadsheets:
-	echo 'DROP TABLE IF EXISTS candidates;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/candidates.csv
-	echo 'ALTER TABLE "candidates" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
-	echo 'DROP TABLE IF EXISTS referendums;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/referendums.csv
-	echo 'ALTER TABLE "referendums" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
-	echo 'DROP TABLE IF EXISTS name_to_number;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/name_to_number.csv
-	echo 'DROP TABLE IF EXISTS committees;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/committees.csv
-	echo 'ALTER TABLE "committees" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
-	echo 'DROP TABLE IF EXISTS office_elections;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert downloads/csv/office_elections.csv
-	echo 'ALTER TABLE "office_elections" ALTER COLUMN title TYPE varchar(50);' | psql $(DATABASE_NAME)
-	echo 'ALTER TABLE "office_elections" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
-	echo 'DROP TABLE IF EXISTS elections;' | psql $(DATABASE_NAME)
-	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert downloads/csv/elections.csv
-	echo 'ALTER TABLE "elections" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+#download: download-spreadsheets download-SFO-2017 download-SFO-2018 \
+#	download-COAK-2015 download-COAK-2016 download-COAK-2017 download-COAK-2018 \
+#	download-BRK-2017 download-BRK-2018
 
-import-data: 496 497 A-Contributions B1-Loans B2-Loans C-Contributions \
-	D-Expenditure E-Expenditure F-Expenses F461P5-Expenditure F465P3-Expenditure \
-	F496P3-Contributions G-Expenditure H-Loans I-Contributions Summary
-	echo 'CREATE TABLE "calculations" (id SERIAL PRIMARY KEY, subject_id integer, subject_type varchar(30), name varchar(40), value jsonb);' | psql $(DATABASE_NAME)
-	./bin/remove_duplicate_transactions
-	./bin/make_view
 
-dropdb:
-	dropdb $(DATABASE_NAME) || true
+#download-SFO-%:
+#	mkdir -p downloads/raw
+#	$(WGET) http://nf4.netfile.com/pub2/excel/SFOBrowsable/efile_SFO_$(subst download-SFO-,,$@).zip -O \
+#		downloads/raw/efile_SFO_$(subst download-SFO-,,$@).zip
+#	unzip -p downloads/raw/efile_SFO_$(subst download-SFO-,,$@).zip > downloads/raw/efile_SFO_$(subst download-SFO-,,$@).xlsx
+#	ruby ssconvert.rb downloads/raw/efile_SFO_$(subst download-SFO-,,$@).xlsx 'downloads/csv/efile_SFO_$(subst download-SFO-,,$@)_%{sheet}.csv'
 
-createdb:
-	createdb $(DATABASE_NAME)
+#download-COAK-%:
+#	mkdir -p downloads/raw
+#	$(WGET) http://nf4.netfile.com/pub2/excel/COAKBrowsable/efile_COAK_$(subst download-COAK-,,$@).zip -O \
+#		downloads/raw/efile_COAK_$(subst download-COAK-,,$@).zip
+#	unzip -p downloads/raw/efile_COAK_$(subst download-COAK-,,$@).zip > downloads/raw/efile_COAK_$(subst download-COAK-,,$@).xlsx
+#	ruby ssconvert.rb downloads/raw/efile_COAK_$(subst download-COAK-,,$@).xlsx 'downloads/csv/efile_COAK_$(subst download-COAK-,,$@)_%{sheet}.csv'
 
-496 497 A-Contributions B1-Loans B2-Loans C-Contributions D-Expenditure E-Expenditure F-Expenses F461P5-Expenditure F465P3-Expenditure F496P3-Contributions G-Expenditure H-Loans I-Contributions Summary:
-	DATABASE_NAME=$(DATABASE_NAME) ./bin/import-file $(CSV_PATH) $@
+#download-BRK-%:
+#	ruby ssconvert.rb downloads/static/efile_BRK_$(subst download-BRK-,,$@).xlsx 'downloads/csv/efile_BRK_$(subst download-BRK-,,$@)_%{sheet}.csv'
+
+#import: dropdb createdb do-import-spreadsheets import-data
+
+#import-cached: dropdb createdb
+#	cat downloads/cached-db/$(DATABASE_NAME).sql | psql $(DATABASE_NAME)
+
+#import-spreadsheets: prep-import-spreadsheets do-import-spreadsheets
+#	./bin/make_view
+
+#prep-import-spreadsheets:
+#	echo 'DROP VIEW "Measure_Expenditures";' | psql $(DATABASE_NAME)
+#	echo 'DROP VIEW "all_contributions" CASCADE;' | psql $(DATABASE_NAME)
+#	echo 'DROP VIEW "independent_candidate_expenditures";' | psql $(DATABASE_NAME)
+
+
+#do-import-spreadsheets:
+#	echo 'DROP TABLE IF EXISTS candidates;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/candidates.csv
+#	echo 'ALTER TABLE "candidates" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+#	echo 'DROP TABLE IF EXISTS referendums;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/referendums.csv
+#	echo 'ALTER TABLE "referendums" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+#	echo 'DROP TABLE IF EXISTS name_to_number;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/name_to_number.csv
+#	echo 'DROP TABLE IF EXISTS committees;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert $(CSV_PATH)/committees.csv
+#	echo 'ALTER TABLE "committees" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+#	echo 'DROP TABLE IF EXISTS office_elections;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert downloads/csv/office_elections.csv
+#	echo 'ALTER TABLE "office_elections" ALTER COLUMN title TYPE varchar(50);' | psql $(DATABASE_NAME)
+#	echo 'ALTER TABLE "office_elections" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+#	echo 'DROP TABLE IF EXISTS elections;' | psql $(DATABASE_NAME)
+#	csvsql --doublequote --db postgresql:///$(DATABASE_NAME) --insert downloads/csv/elections.csv
+#	echo 'ALTER TABLE "elections" ADD COLUMN id SERIAL PRIMARY KEY;' | psql $(DATABASE_NAME)
+
+#import-data: 496 497 A-Contributions B1-Loans B2-Loans C-Contributions \
+#	D-Expenditure E-Expenditure F-Expenses F461P5-Expenditure F465P3-Expenditure \
+#	F496P3-Contributions G-Expenditure H-Loans I-Contributions Summary
+#	echo 'CREATE TABLE "calculations" (id SERIAL PRIMARY KEY, subject_id integer, subject_type varchar(30), name varchar(40), value jsonb);' | psql $(DATABASE_NAME)
+#	./bin/remove_duplicate_transactions
+#	./bin/make_view
+
+#dropdb:
+#	dropdb $(DATABASE_NAME) || true
+
+#createdb:
+#	createdb $(DATABASE_NAME)
+
+#496 497 A-Contributions B1-Loans B2-Loans C-Contributions D-Expenditure E-Expenditure F-Expenses F461P5-Expenditure F465P3-Expenditure F496P3-Contributions G-Expenditure H-Loans I-Contributions Summary:
+#	DATABASE_NAME=$(DATABASE_NAME) ./bin/import-file $(CSV_PATH) $@
+
+downloads/csv/sd_candidates.csv:
+	mkdir -p downloads/csv downloads/raw
+	$(WGET) -O- \
+		'https://docs.google.com/spreadsheets/export?id=1mENueYg0PhXE_MA9AypWWBJvBLdY03b8H_N_aIW-Ohw&exportFormat=csv' | \
+	sed -e '1s/ /_/g' | \
+	sed -e '1s/[^a-zA-Z,_]//g' > $@
 
 downloads/csv/candidates.csv:
 	mkdir -p downloads/csv downloads/raw
