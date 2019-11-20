@@ -155,5 +155,5 @@ downloads/csv/elections.csv:
 	sed -e '1s/ /_/g' | \
 	sed -e '1s/[^a-zA-Z,_]//g' > $@
 
-run:
-	bundle exec ruby server.rb
+#run:
+#	bundle exec ruby server.rb
